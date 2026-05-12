@@ -21,7 +21,8 @@ import {
   ChevronRight,
   TrendingDown,
   Activity,
-  Dumbbell
+  Dumbbell,
+  Coins
 } from 'lucide-react';
 import { formatDuration } from '../lib/utils';
 import { format } from 'date-fns';
@@ -32,12 +33,15 @@ interface DashboardProps {
 
 export default function Dashboard({ user }: DashboardProps) {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
-      const data = await fitnessService.getWorkouts(user.uid);
-      setWorkouts(data);
+      const wData = await fitnessService.getWorkouts(user.uid);
+      const pData = await fitnessService.getUserProfile(user.uid);
+      setWorkouts(wData);
+      setProfile(pData);
       setLoading(false);
     };
     fetchData();
@@ -45,14 +49,14 @@ export default function Dashboard({ user }: DashboardProps) {
 
   const totalCalories = workouts.reduce((acc, curr) => acc + curr.calories, 0);
   const totalDuration = workouts.reduce((acc, curr) => acc + curr.duration, 0);
-  const activityCount = workouts.length;
 
-  // Chart data
-  const chartData = workouts.slice(0, 7).reverse().map(w => ({
-    date: format(new Date(w.timestamp), 'MMM dd'),
-    calories: w.calories,
-    duration: w.duration
-  }));
+  // Memoized chart data to prevent lag on scroll/re-render
+  const chartData = React.useMemo(() => 
+    workouts.slice(0, 7).reverse().map(w => ({
+      date: format(new Date(w.timestamp), 'MMM dd'),
+      calories: w.calories,
+      duration: w.duration
+    })), [workouts]);
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -69,6 +73,10 @@ export default function Dashboard({ user }: DashboardProps) {
 
   if (loading) return null;
 
+  const today = new Date().toISOString().split('T')[0];
+  const workoutToday = workouts.some(w => w.timestamp.split('T')[0] === today);
+  const showStreakWarning = profile?.streakCount ? !workoutToday : false;
+
   return (
     <motion.div 
       initial="hidden"
@@ -79,42 +87,72 @@ export default function Dashboard({ user }: DashboardProps) {
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Welcome back, {user.displayName?.split(' ')[0]}!</h1>
-          <p className="text-slate-500 mt-1 font-medium">Here's your fitness overview for today.</p>
+          <p className="text-slate-500 mt-1 font-medium italic">Dominate your goals today.</p>
         </div>
         <div className="flex items-center gap-4">
           <div className="px-5 py-3 bg-white rounded-2xl border border-slate-200 flex items-center gap-3 shadow-sm">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Elite Member Status</span>
+            <div className={`w-2 h-2 rounded-full animate-pulse ${profile?.streakCount ? 'bg-orange-500' : 'bg-slate-300'}`} />
+            <span className="text-xs font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
+              <Flame size={14} className={profile?.streakCount ? 'text-orange-500' : 'text-slate-300'} />
+              {profile?.streakCount || 0} Day Streak
+            </span>
+          </div>
+          <div className="px-5 py-3 bg-white rounded-2xl border border-slate-200 flex items-center gap-3 shadow-sm">
+            <Coins size={14} className="text-yellow-500" />
+            <span className="text-xs font-black text-slate-800 uppercase tracking-widest">
+              {profile?.coins.toLocaleString()} Coins
+            </span>
           </div>
         </div>
       </header>
+
+      {showStreakWarning && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-orange-500 bg-gradient-to-r from-orange-500 to-orange-600 rounded-[32px] p-8 text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl shadow-orange-200"
+        >
+          <div className="flex items-center gap-6">
+            <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center animate-bounce">
+              <Flame size={32} />
+            </div>
+            <div>
+              <h3 className="text-xl font-black mb-1">STREAK AT RISK!</h3>
+              <p className="text-orange-100 text-sm font-medium">Log a workout now to keep your {profile?.streakCount} day streak alive.</p>
+            </div>
+          </div>
+          <button className="bg-white text-orange-600 px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-orange-50 transition-all flex items-center gap-2">
+            Log Workout <ChevronRight size={16} />
+          </button>
+        </motion.div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard 
           icon={<Flame className="text-orange-500" size={24} />}
-          label="Calories Burned"
+          label="Energy Repro"
           value={totalCalories.toLocaleString()}
           unit="kcal"
-          progress={82}
+          progress={Math.min(100, (totalCalories / 2000) * 100)}
           theme="orange"
           variants={itemVariants}
         />
         <StatCard 
-          icon={<Clock className="text-indigo-500" size={24} />}
-          label="Active Duration"
-          value={totalDuration.toString()}
-          unit="min"
-          progress={64}
+          icon={<Activity className="text-indigo-500" size={24} />}
+          label="Rank Tier"
+          value={profile?.league || 'Beginner'}
+          unit=""
+          progress={profile?.streakCount ? Math.min(100, (profile.streakCount / 50) * 100) : 0}
           theme="indigo"
           variants={itemVariants}
         />
         <StatCard 
           icon={<Target className="text-emerald-500" size={24} />}
-          label="Success Rate"
-          value="95"
-          unit="%"
-          progress={95}
+          label="Strategic Edge"
+          value={profile?.coinMultiplier || 1}
+          unit="X"
+          progress={((profile?.coinMultiplier || 1) / 3) * 100}
           theme="emerald"
           variants={itemVariants}
         />

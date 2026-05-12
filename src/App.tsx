@@ -7,8 +7,8 @@ import {
   Link,
   useLocation
 } from 'react-router-dom';
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
-import { auth, googleProvider, db } from './lib/firebase';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { auth, db } from './lib/firebase';
 import { fitnessService } from './services/fitnessService';
 import { UserProfile, Workout, Milestone, TrainingPlan } from './types';
 import { doc, getDocFromServer } from 'firebase/firestore';
@@ -21,7 +21,11 @@ import {
   Settings, 
   LogOut, 
   Dumbbell,
-  FileCode
+  FileCode,
+  Store,
+  ShieldAlert,
+  Bell,
+  Dna
 } from 'lucide-react';
 
 // Components
@@ -30,9 +34,15 @@ import WorkoutLog from './components/WorkoutLog';
 import TrainingPlanView from './components/TrainingPlan';
 import Milestones from './components/Milestones';
 import StalorineExport from './components/StalorineExport';
+import Shop from './components/Shop';
+import Leaderboard from './components/Leaderboard';
+import AdminPanel from './components/AdminPanel';
+import Notifications from './components/Notifications';
+import Auth from './components/Auth';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -48,27 +58,34 @@ export default function App() {
     };
     testConnection();
 
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      if (u) {
+        let p = await fitnessService.getUserProfile(u.uid);
+        if (!p) {
+          p = await fitnessService.createUserProfile(u);
+        }
+        if (p.isBanned) {
+          await signOut(auth);
+          alert("Your account has been banned.");
+          return;
+        }
+        setProfile(p);
+      }
       setUser(u);
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  const handleLogin = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error("Login Error:", error);
-    }
-  };
-
   const handleLogout = () => signOut(auth);
 
   if (loading) {
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Activity className="w-8 h-8 text-indigo-600 animate-spin" />
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Dna className="animate-spin text-indigo-600" size={48} />
+          <p className="text-[10px] font-black uppercase tracking-[4px] text-slate-400">Syncing Intelligence...</p>
+        </div>
       </div>
     );
   }
@@ -76,26 +93,7 @@ export default function App() {
   return (
     <Router>
       {!user ? (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="max-w-md w-full bg-white rounded-3xl p-8 shadow-sm border border-slate-200 text-center"
-          >
-            <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Activity className="w-8 h-8 text-indigo-600" />
-            </div>
-            <h1 className="text-3xl font-bold text-slate-900 mb-2">Aura Fitness</h1>
-            <p className="text-slate-500 mb-8">Elevate your performance with AI-powered training.</p>
-            <button
-              onClick={handleLogin}
-              className="w-full bg-indigo-600 text-white font-bold py-4 px-6 rounded-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 shadow-lg shadow-indigo-100"
-            >
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/layout/google.svg" className="w-5 h-5 bg-white rounded-full p-0.5" alt="Google" />
-              Continue with Google
-            </button>
-          </motion.div>
-        </div>
+        <Auth />
       ) : (
         <div className="min-h-screen bg-slate-50 flex">
           {/* Sidebar */}
@@ -107,21 +105,28 @@ export default function App() {
               <span className="text-xl font-bold text-slate-800 tracking-tight">AURA</span>
             </div>
 
-            <nav className="flex-1 space-y-2">
+            <nav className="flex-1 space-y-2 overflow-y-auto pr-2">
               <NavItem to="/" icon={<LayoutDashboard size={20} />} label="Dashboard" />
               <NavItem to="/workouts" icon={<Dumbbell size={20} />} label="Workouts" />
               <NavItem to="/plans" icon={<ClipboardList size={20} />} label="Training Plans" />
               <NavItem to="/milestones" icon={<Trophy size={20} />} label="Milestones" />
+              <NavItem to="/leaderboard" icon={<Trophy size={20} />} label="Leaderboard" />
+              <NavItem to="/shop" icon={<Store size={20} />} label="Market" />
               <NavItem to="/export" icon={<FileCode size={20} />} label="Stalorine Export" />
+              {profile?.role === 'admin' && (
+                <NavItem to="/admin" icon={<ShieldAlert size={20} />} label="Admin Panel" />
+              )}
             </nav>
 
             <div className="pt-6 border-t border-slate-100">
-              <div className="flex items-center gap-3 mb-6 p-2 rounded-xl bg-slate-50">
+              <Notifications user={user} />
+              <div className="flex items-center gap-3 mb-6 p-2 rounded-xl bg-slate-50 mt-4">
                 <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-200">
                   <img src={user.photoURL || ''} alt={user.displayName || ''} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-slate-900 truncate">{user.displayName}</p>
+                  <p className="text-[10px] font-bold text-indigo-600 uppercase">{profile?.league || 'Beginner'}</p>
                 </div>
               </div>
               <button 
@@ -142,22 +147,41 @@ export default function App() {
                 <Route path="/workouts" element={<WorkoutLog user={user} />} />
                 <Route path="/plans" element={<TrainingPlanView user={user} />} />
                 <Route path="/milestones" element={<Milestones user={user} />} />
+                <Route path="/leaderboard" element={<Leaderboard user={user} />} />
+                <Route path="/shop" element={<Shop user={user} />} />
                 <Route path="/export" element={<StalorineExport user={user} />} />
+                <Route path="/admin" element={profile?.role === 'admin' ? <AdminPanel user={user} /> : <Navigate to="/" />} />
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
             </AnimatePresence>
           </main>
 
           {/* Mobile Nav */}
-          <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around p-4">
-             <Link to="/"><LayoutDashboard className="text-gray-400" size={24} /></Link>
-             <Link to="/workouts"><Dumbbell className="text-gray-400" size={24} /></Link>
-             <Link to="/plans"><ClipboardList className="text-gray-400" size={24} /></Link>
-             <Link to="/milestones"><Trophy className="text-gray-400" size={24} /></Link>
+          <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-slate-200 flex justify-around p-4 z-50 safe-area-bottom">
+             <MobileNavItem to="/" icon={<LayoutDashboard size={24} />} label="Home" />
+             <MobileNavItem to="/workouts" icon={<Dumbbell size={24} />} label="Train" />
+             <MobileNavItem to="/leaderboard" icon={<Trophy size={24} />} label="Arena" />
+             <MobileNavItem to="/shop" icon={<Store size={24} />} label="Shop" />
           </nav>
         </div>
       )}
     </Router>
+  );
+}
+
+function MobileNavItem({ to, icon, label }: { to: string, icon: React.ReactNode, label: string }) {
+  const location = useLocation();
+  const isActive = location.pathname === to;
+
+  return (
+    <Link to={to} className="flex flex-col items-center gap-1">
+      <div className={`p-2 rounded-xl transition-all ${isActive ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>
+        {icon}
+      </div>
+      <span className={`text-[10px] font-black uppercase tracking-widest ${isActive ? 'text-indigo-600' : 'text-slate-400'}`}>
+        {label}
+      </span>
+    </Link>
   );
 }
 

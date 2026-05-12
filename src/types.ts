@@ -7,6 +7,18 @@ export interface UserProfile {
   height?: number;
   fitnessGoal?: string;
   createdAt: string;
+  
+  // Game systems
+  coins: number;
+  streakCount: number;
+  lastWorkoutDate?: string; // YYYY-MM-DD
+  streakFreezes: number;
+  coinMultiplier: number;
+  league: 'Beginner' | 'Dirt' | 'Rock' | 'Legend' | 'Gold' | 'Diamond' | 'Super';
+  
+  // Admin & Security
+  role: 'user' | 'admin';
+  isBanned?: boolean;
 }
 
 export enum WorkoutType {
@@ -27,8 +39,18 @@ export interface Workout {
   intensity: 'low' | 'medium' | 'high';
   calories: number;
   distance?: number; // km
+  coinsEarned: number;
   notes?: string;
   timestamp: string;
+}
+
+export interface Announcement {
+  id?: string;
+  title: string;
+  message: string;
+  type: 'ping' | 'broadcast';
+  targetUserId?: string; // If ping, specific user. If broadcast, null/empty.
+  createdAt: string;
 }
 
 export interface Milestone {

@@ -15,9 +15,14 @@ service cloud.firestore {
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
+
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
     
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    function isNotBanned() {
+      return !('isBanned' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isBanned == false;
     }
 
     function incoming() {
@@ -31,63 +36,42 @@ service cloud.firestore {
     // Validation Helpers
     function isValidProfile(data) {
       return data.uid is string && data.uid == request.auth.uid &&
-             data.email is string && data.email.size() <= 100 &&
-             (!('targetWeight' in data) || data.targetWeight is number) &&
-             (!('fitnessGoal' in data) || data.fitnessGoal is string && data.fitnessGoal.size() <= 200);
-    }
-
-    function isValidWorkout(data) {
-      return data.userId is string && data.userId == request.auth.uid &&
-             data.type is string && data.type.size() <= 50 &&
-             data.duration is number && data.duration > 0 &&
-             data.calories is number && data.calories >= 0 &&
-             data.timestamp is string &&
-             (!('notes' in data) || data.notes is string && data.notes.size() <= 1000);
-    }
-
-    function isValidMilestone(data) {
-      return data.userId is string && data.userId == request.auth.uid &&
-             data.title is string && data.title.size() <= 100 &&
-             data.achievedAt is string;
-    }
-
-    function isValidTrainingPlan(data) {
-      return data.userId is string && data.userId == request.auth.uid &&
-             data.content is string && data.content.size() <= 20000 &&
-             data.startDate is string;
+             data.email is string &&
+             data.coins is number &&
+             data.streakCount is number &&
+             data.league in ['Beginner', 'Dirt', 'Rock', 'Legend', 'Gold', 'Diamond', 'Super'];
     }
 
     // 2. Collection Rules
     
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidProfile(incoming());
-      allow update: if isOwner(userId) && isValidProfile(incoming()) && 
-                    incoming().diff(existing()).affectedKeys().hasOnly(['name', 'targetWeight', 'currentWeight', 'height', 'fitnessGoal']);
+      allow get: if isSignedIn(); // Users need to see each other for leaderboard
+      allow list: if isSignedIn(); // Needed for leaderboard
+      allow create: if isOwner(userId) && 
+                    incoming().email == request.auth.token.email &&
+                    (incoming().role == 'user' || (request.auth.token.email in ['jdfhahfe@aura.fit', 'jdfhahfe@gmail.com'] && incoming().role == 'admin'));
+      allow update: if (isOwner(userId) && isNotBanned() && 
+                    !incoming().diff(existing()).affectedKeys().hasAny(['role', 'isBanned'])) ||
+                    isAdmin();
     }
 
     match /workouts/{workoutId} {
-      allow get: if isSignedIn() && isOwner(existing().userId);
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && isValidWorkout(incoming());
-      allow update: if false; // Workouts are immutable in this app version
-      allow delete: if isSignedIn() && isOwner(existing().userId);
+      allow get: if isSignedIn() && (isOwner(existing().userId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isNotBanned() && incoming().userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    match /announcements/{annId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     match /milestones/{milestoneId} {
       allow get: if isSignedIn() && isOwner(existing().userId);
       allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && isValidMilestone(incoming());
-      allow update, delete: if false;
-    }
-
-    match /trainingPlans/{planId} {
-      allow get: if isSignedIn() && isOwner(existing().userId);
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && isValidTrainingPlan(incoming());
-      allow update: if isSignedIn() && isOwner(existing().userId) && 
-                    incoming().diff(existing()).affectedKeys().hasOnly(['status']);
-      allow delete: if isSignedIn() && isOwner(existing().userId);
+      allow create: if isSignedIn() && isNotBanned();
+      allow update, delete: if isAdmin();
     }
   }
 }

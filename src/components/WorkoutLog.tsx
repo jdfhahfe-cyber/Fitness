@@ -40,6 +40,7 @@ export default function WorkoutLog({ user }: WorkoutLogProps) {
     setSubmitting(true);
     
     const calories = calculateCalories(type, duration, intensity);
+    const coinsEarned = Math.floor(calories / 10);
     
     const newWorkout: Workout = {
       userId: user.uid,
@@ -47,6 +48,7 @@ export default function WorkoutLog({ user }: WorkoutLogProps) {
       duration,
       intensity,
       calories,
+      coinsEarned,
       distance: distance > 0 ? distance : undefined,
       notes,
       timestamp: new Date().toISOString()
