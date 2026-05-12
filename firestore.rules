@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 1. Primitive Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation Helpers
+    function isValidProfile(data) {
+      return data.uid is string && data.uid == request.auth.uid &&
+             data.email is string && data.email.size() <= 100 &&
+             (!('targetWeight' in data) || data.targetWeight is number) &&
+             (!('fitnessGoal' in data) || data.fitnessGoal is string && data.fitnessGoal.size() <= 200);
+    }
+
+    function isValidWorkout(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.type is string && data.type.size() <= 50 &&
+             data.duration is number && data.duration > 0 &&
+             data.calories is number && data.calories >= 0 &&
+             data.timestamp is string &&
+             (!('notes' in data) || data.notes is string && data.notes.size() <= 1000);
+    }
+
+    function isValidMilestone(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.title is string && data.title.size() <= 100 &&
+             data.achievedAt is string;
+    }
+
+    function isValidTrainingPlan(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.content is string && data.content.size() <= 20000 &&
+             data.startDate is string;
+    }
+
+    // 2. Collection Rules
+    
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidProfile(incoming());
+      allow update: if isOwner(userId) && isValidProfile(incoming()) && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['name', 'targetWeight', 'currentWeight', 'height', 'fitnessGoal']);
+    }
+
+    match /workouts/{workoutId} {
+      allow get: if isSignedIn() && isOwner(existing().userId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidWorkout(incoming());
+      allow update: if false; // Workouts are immutable in this app version
+      allow delete: if isSignedIn() && isOwner(existing().userId);
+    }
+
+    match /milestones/{milestoneId} {
+      allow get: if isSignedIn() && isOwner(existing().userId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidMilestone(incoming());
+      allow update, delete: if false;
+    }
+
+    match /trainingPlans/{planId} {
+      allow get: if isSignedIn() && isOwner(existing().userId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidTrainingPlan(incoming());
+      allow update: if isSignedIn() && isOwner(existing().userId) && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if isSignedIn() && isOwner(existing().userId);
+    }
+  }
+}
